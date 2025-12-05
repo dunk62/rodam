@@ -379,6 +379,17 @@ def make_kakao_response(text: str) -> Dict[str, Any]:
 
 # ============ 카카오 스킬 엔드포인트 ============
 
+@app.on_event("startup")
+async def startup_event():
+    """서버 시작 시 PDF 파일 미리 로드"""
+    print("[시작] PDF 파일 미리 로드 중...")
+    try:
+        get_pdf_files_for_gemini()
+        print("[시작] PDF 파일 로드 완료!")
+    except Exception as e:
+        print(f"[시작] PDF 로드 실패: {str(e)}")
+
+
 @app.get("/")
 async def root():
     """루트 경로"""
