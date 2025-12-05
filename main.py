@@ -292,16 +292,26 @@ def search_inventory(product_name: str) -> str:
     quantity_col = None
     
     for col in df.columns:
-        col_lower = col.lower()
-        if '제품' in col or 'product' in col_lower or '품명' in col or '상품' in col or '이름' in col:
+        col_lower = col.lower().strip()
+        # 제품 컬럼 찾기 (Model Code, Model Number 등)
+        if col_lower in ['model code', 'model number', 'model', 'code', 'product', 'item']:
             product_col = col
-        if '수량' in col or 'quantity' in col_lower or '재고' in col or 'stock' in col_lower:
+        if '제품' in col or '품명' in col or '상품' in col or '품번' in col:
+            product_col = col
+        # 수량 컬럼 찾기
+        if col_lower == 'quantity' or col_lower == 'qty' or col_lower == 'stock':
+            quantity_col = col
+        if '수량' in col or '재고' in col:
             quantity_col = col
     
     if product_col is None:
-        product_col = df.columns[0]
-    if quantity_col is None and len(df.columns) > 1:
-        quantity_col = df.columns[1]
+        # Model Code가 없으면 첫 번째 컬럼이 아닌 두 번째 컬럼 시도 (Category 다음)
+        if len(df.columns) > 1:
+            product_col = df.columns[1]
+        else:
+            product_col = df.columns[0]
+    if quantity_col is None and len(df.columns) > 3:
+        quantity_col = df.columns[3]  # Quantity는 4번째 컬럼
     
     # 검색
     mask = df[product_col].astype(str).str.contains(product_name, case=False, na=False)
