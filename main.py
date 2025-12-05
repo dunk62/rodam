@@ -334,7 +334,7 @@ def search_inventory(product_name: str) -> str:
 
 
 def chat_with_pdf(message: str) -> str:
-    """PDF 기반 Gemini 챗봇 응답"""
+    """PDF 기반 Gemini 챗봇 응답 (최적화)"""
     try:
         pdf_files = get_pdf_files_for_gemini()
         
@@ -345,16 +345,14 @@ def chat_with_pdf(message: str) -> str:
             model_name='gemini-2.0-flash',
             generation_config={
                 'temperature': 0.1,
-                'max_output_tokens': 1024,
+                'max_output_tokens': 300,  # 응답 길이 제한 (빠른 응답)
             }
         )
         
-        system_prompt = """너는 기술 지원 AI야. 
-반드시 첨부된 PDF 문서들의 내용에 기반해서만 답변해. 
-문서에 없는 내용은 "해당 정보는 제공된 문서에서 찾을 수 없습니다."라고 답변해.
-답변은 친절하고 명확하게, 카카오톡 메시지에 적합하게 간결하게 작성해."""
+        # 간결한 프롬프트로 빠른 응답
+        system_prompt = """PDF 문서 기반으로 간결하게 답변해. 3-4줄 이내로 핵심만."""
         
-        contents = pdf_files + [f"{system_prompt}\n\n사용자 질문: {message}"]
+        contents = pdf_files + [f"{system_prompt}\n질문: {message}"]
         response = model.generate_content(contents)
         
         return response.text
