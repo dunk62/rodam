@@ -14,7 +14,8 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+import requests
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -70,6 +71,8 @@ class KakaoUserRequest(BaseModel):
     utterance: str
     lang: str = "ko"
     user: KakaoUser
+    callbackUrl: Optional[str] = None  # Callback API용 URL
+    params: Dict[str, Any] = {}
 
 class KakaoBot(BaseModel):
     id: str
@@ -377,6 +380,51 @@ def make_kakao_response(text: str) -> Dict[str, Any]:
     }
 
 
+def make_callback_response() -> Dict[str, Any]:
+    """Callback API 사용 응답 - 즉시 반환"""
+    return {
+        "version": "2.0",
+        "useCallback": True
+    }
+
+
+def process_gemini_callback(callback_url: str, message: str):
+    """
+    백그라운드에서 Gemini 처리 후 Callback URL로 응답 전송
+    
+    카카오 Callback API:
+    - 먼저 useCallback: true를 반환하면 카카오가 1분까지 기다림
+    - 응답이 준비되면 callbackUrl로 POST 요청
+    """
+    try:
+        print(f"[Callback] Gemini 처리 시작: {message[:50]}...")
+        
+        # Gemini로 PDF 기반 답변 생성
+        answer = chat_with_pdf(message)
+        
+        # 카카오 응답 포맷으로 구성
+        response_payload = make_kakao_response(answer)
+        
+        # Callback URL로 응답 전송
+        response = requests.post(
+            callback_url,
+            json=response_payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        
+        print(f"[Callback] 응답 전송 완료: {response.status_code}")
+        
+    except Exception as e:
+        print(f"[Callback] 처리 실패: {str(e)}")
+        # 에러 시에도 응답 전송 시도
+        try:
+            error_response = make_kakao_response("죄송합니다. 응답 생성 중 오류가 발생했습니다.")
+            requests.post(callback_url, json=error_response, timeout=5)
+        except:
+            pass
+
+
 # ============ 카카오 스킬 엔드포인트 ============
 
 @app.on_event("startup")
@@ -434,20 +482,27 @@ async def skill_inventory(request: KakaoRequest):
 
 
 @app.post("/skill/chat")
-async def skill_chat(request: KakaoRequest):
+async def skill_chat(request: KakaoRequest, background_tasks: BackgroundTasks):
     """
-    PDF 기반 챗봇 스킬
+    PDF 기반 챗봇 스킬 (Callback API 사용)
     
     카카오 오픈빌더에서 '질문' 인텐트로 연결
     """
     try:
         message = request.userRequest.utterance
+        callback_url = request.userRequest.callbackUrl
         
         if not message:
             return make_kakao_response("무엇이 궁금하신가요?")
         
-        result = chat_with_pdf(message)
-        return make_kakao_response(result)
+        # Callback API 사용
+        if callback_url:
+            background_tasks.add_task(process_gemini_callback, callback_url, message)
+            return make_callback_response()
+        else:
+            # callbackUrl이 없으면 동기 처리 (테스트용)
+            result = chat_with_pdf(message)
+            return make_kakao_response(result)
         
     except Exception as e:
         print(f"챗봇 오류: {str(e)}")
@@ -455,13 +510,15 @@ async def skill_chat(request: KakaoRequest):
 
 
 @app.post("/skill/fallback")
-async def skill_fallback(request: KakaoRequest):
+async def skill_fallback(request: KakaoRequest, background_tasks: BackgroundTasks):
     """
     폴백 스킬 (기본 응답)
     
-    매칭되는 인텐트가 없을 때 사용
+    - 재고 질문: 즉시 응답 (빠름)
+    - PDF 질문: Callback API 사용 (백그라운드 처리)
     """
     message = request.userRequest.utterance
+    callback_url = request.userRequest.callbackUrl
     
     # 재고 관련 키워드 확인 (재고/수량 관련 키워드만)
     inventory_keywords = ["재고", "수량", "몇개", "있어", "남아"]
@@ -478,9 +535,16 @@ async def skill_fallback(request: KakaoRequest):
             result = "어떤 제품의 재고를 확인할까요?\n예: 'PAG-40-NE 재고'"
         return make_kakao_response(result)
     
-    # 그 외는 PDF 기반 답변
-    result = chat_with_pdf(message)
-    return make_kakao_response(result)
+    # PDF 기반 답변 - Callback API 사용
+    if callback_url:
+        # 백그라운드에서 Gemini 처리 후 callback_url로 응답
+        background_tasks.add_task(process_gemini_callback, callback_url, message)
+        # 즉시 useCallback: true 반환 (카카오가 callback 응답을 기다림)
+        return make_callback_response()
+    else:
+        # callbackUrl이 없으면 동기 처리 (테스트용)
+        result = chat_with_pdf(message)
+        return make_kakao_response(result)
 
 
 # ============ 디버깅용 엔드포인트 ============
