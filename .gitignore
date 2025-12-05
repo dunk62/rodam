@@ -1,0 +1,26 @@
+# 환경 변수 (민감한 정보)
+.env
+
+# 서비스 계정 키 파일
+service-account-key.json
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
