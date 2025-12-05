@@ -178,31 +178,68 @@ def load_csv_with_encoding(content: bytes) -> pd.DataFrame:
 
 
 def get_latest_inventory() -> pd.DataFrame:
-    """최신 CSV 파일에서 재고 데이터 로드 (10분 캐싱)"""
+    """최신 Google Sheets 또는 CSV 파일에서 재고 데이터 로드 (10분 캐싱)"""
     cache_key = "inventory"
     
     if cache_key in inventory_cache:
         return inventory_cache[cache_key]
     
+    drive_service = get_drive_service()
+    if not drive_service:
+        return pd.DataFrame()
+    
+    # Google Sheets 먼저 검색
+    sheets_files = search_files_in_folder(
+        mime_type='application/vnd.google-apps.spreadsheet',
+        order_by='createdTime desc'
+    )
+    
+    # CSV 파일도 검색
     csv_files = search_files_in_folder(
         mime_type='text/csv',
         order_by='createdTime desc'
     )
     
-    if not csv_files:
+    # 모든 파일을 합쳐서 가장 최신 파일 선택
+    all_files = sheets_files + csv_files
+    if not all_files:
         return pd.DataFrame()
     
-    latest_file = csv_files[0]
-    print(f"[재고] 최신 CSV 파일 로드: {latest_file['name']}")
+    # createdTime 기준 정렬
+    all_files.sort(key=lambda x: x.get('createdTime', ''), reverse=True)
+    latest_file = all_files[0]
     
-    content = download_file_content(latest_file['id'])
-    if not content:
+    print(f"[재고] 최신 파일 로드: {latest_file['name']} (타입: {latest_file['mimeType']})")
+    
+    try:
+        # Google Sheets인 경우 CSV로 내보내기
+        if latest_file['mimeType'] == 'application/vnd.google-apps.spreadsheet':
+            request = drive_service.files().export_media(
+                fileId=latest_file['id'],
+                mimeType='text/csv'
+            )
+            file_buffer = io.BytesIO()
+            from googleapiclient.http import MediaIoBaseDownload
+            downloader = MediaIoBaseDownload(file_buffer, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            file_buffer.seek(0)
+            content = file_buffer.read()
+        else:
+            # CSV 파일인 경우 직접 다운로드
+            content = download_file_content(latest_file['id'])
+        
+        if not content:
+            return pd.DataFrame()
+        
+        df = load_csv_with_encoding(content)
+        inventory_cache[cache_key] = df
+        
+        return df
+    except Exception as e:
+        print(f"[재고] 파일 로드 실패: {str(e)}")
         return pd.DataFrame()
-    
-    df = load_csv_with_encoding(content)
-    inventory_cache[cache_key] = df
-    
-    return df
 
 
 def get_pdf_files_for_gemini() -> list:
