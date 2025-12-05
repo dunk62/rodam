@@ -453,9 +453,18 @@ async def skill_fallback(request: KakaoRequest):
     message = request.userRequest.utterance
     
     # 재고 관련 키워드 확인
-    inventory_keywords = ["재고", "수량", "몇개", "있어", "남아"]
+    inventory_keywords = ["재고", "수량", "몇개", "있어", "남아", "확인", "조회", "알려줘", "알려줘"]
     if any(kw in message for kw in inventory_keywords):
-        result = search_inventory(message)
+        # 키워드 제거 후 검색어 추출
+        search_query = message
+        for kw in inventory_keywords:
+            search_query = search_query.replace(kw, "")
+        search_query = search_query.strip()
+        
+        if search_query:
+            result = search_inventory(search_query)
+        else:
+            result = "어떤 제품의 재고를 확인할까요?\n예: 'PAG-40-NE 재고'"
         return make_kakao_response(result)
     
     # 그 외는 PDF 기반 답변
