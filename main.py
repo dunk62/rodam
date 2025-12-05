@@ -463,8 +463,8 @@ async def skill_fallback(request: KakaoRequest):
     """
     message = request.userRequest.utterance
     
-    # 재고 관련 키워드 확인
-    inventory_keywords = ["재고", "수량", "몇개", "있어", "남아", "확인", "조회", "알려줘", "알려줘"]
+    # 재고 관련 키워드 확인 (재고/수량 관련 키워드만)
+    inventory_keywords = ["재고", "수량", "몇개", "있어", "남아"]
     if any(kw in message for kw in inventory_keywords):
         # 키워드 제거 후 검색어 추출
         search_query = message
